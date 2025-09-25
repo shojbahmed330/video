@@ -34,9 +34,12 @@ const ParticipantVideo: React.FC<{
         let trackToPlay: ICameraVideoTrack | undefined | null = isLocal ? localVideoTrack : remoteUser?.videoTrack;
         
         if (trackToPlay && !participant.isCameraOff) {
+            // Detach any existing player before playing the new one
+            if(videoContainer.hasChildNodes()){
+                videoContainer.innerHTML = '';
+            }
             trackToPlay.play(videoContainer, { fit: 'cover' });
         } else {
-            // If there's a track playing, stop it.
             const playingTrack = isLocal ? localVideoTrack : remoteUser?.videoTrack;
             if (playingTrack && playingTrack.isPlaying) {
                 playingTrack.stop();
@@ -47,17 +50,17 @@ const ParticipantVideo: React.FC<{
     const showVideo = (isLocal && localVideoTrack && !participant.isCameraOff) || (!isLocal && remoteUser?.hasVideo && !participant.isCameraOff);
 
     return (
-        <div className="w-full h-full bg-slate-800 relative group">
+        <div className="w-full h-full bg-slate-800 relative group rounded-lg overflow-hidden">
             {showVideo ? (
                 <div ref={videoRef} className={`w-full h-full ${isLocal ? 'transform scale-x-[-1]' : ''}`} />
             ) : (
                 <div className="w-full h-full flex items-center justify-center">
-                    <img src={participant.avatarUrl} alt={participant.name} className="w-24 h-24 object-cover rounded-full opacity-50" />
+                    <img src={participant.avatarUrl} alt={participant.name} className="w-16 h-16 md:w-24 md:h-24 object-cover rounded-full opacity-50" />
                 </div>
             )}
-             <div className={`absolute inset-0 border-4 rounded-lg pointer-events-none transition-colors ${isSpeaking ? 'border-green-400' : 'border-transparent'}`} />
-             <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent">
-                 <p className="font-semibold text-white truncate text-shadow-lg">{participant.name}</p>
+             <div className={`absolute inset-0 border-4 rounded-lg pointer-events-none transition-all duration-300 ${isSpeaking ? 'border-green-400 ring-4 ring-green-400/50' : 'border-transparent'}`} />
+             <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/70 to-transparent">
+                 <p className="font-semibold text-white truncate text-shadow-lg text-sm">{participant.name}</p>
              </div>
         </div>
     );
@@ -65,11 +68,11 @@ const ParticipantVideo: React.FC<{
 
 const ChatMessage: React.FC<{ message: LiveVideoRoomMessage; isMe: boolean }> = ({ message, isMe }) => {
     return (
-      <div className={`flex items-start gap-2 ${isMe ? 'justify-end' : ''}`}>
+      <div className={`flex items-start gap-2 ${isMe ? 'justify-end' : ''} animate-fade-in-fast`}>
         {!isMe && <img src={message.sender.avatarUrl} alt={message.sender.name} className="w-6 h-6 rounded-full mt-1" />}
         <div>
           {!isMe && <p className="text-xs text-slate-400 ml-2">{message.sender.name}</p>}
-          <div className={`px-3 py-1.5 rounded-2xl text-sm ${isMe ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200'}`}>
+          <div className={`px-3 py-1.5 rounded-2xl text-sm ${isMe ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-700 text-slate-200 rounded-bl-none'}`}>
             {message.text}
           </div>
         </div>
@@ -88,9 +91,9 @@ const getGridLayout = (participantCount: number) => {
     if (participantCount <= 1) return 'grid-cols-1 grid-rows-1';
     if (participantCount === 2) return 'grid-cols-1 grid-rows-2 md:grid-cols-2 md:grid-rows-1';
     if (participantCount <= 4) return 'grid-cols-2 grid-rows-2';
-    if (participantCount <= 6) return 'grid-cols-3 grid-rows-2';
+    if (participantCount <= 6) return 'grid-cols-2 grid-rows-3 md:grid-cols-3 md:grid-rows-2';
     if (participantCount <= 9) return 'grid-cols-3 grid-rows-3';
-    return 'grid-cols-4 grid-rows-4';
+    return 'grid-cols-3 grid-rows-4 md:grid-cols-4 md:grid-rows-4';
 };
 
 
@@ -99,6 +102,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
     const [messages, setMessages] = useState<LiveVideoRoomMessage[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const [isEmojiPickerOpen, setEmojiPickerOpen] = useState(false);
+    const [isChatVisible, setIsChatVisible] = useState(false);
     
     const [remoteUsers, setRemoteUsers] = useState<IAgoraRTCRemoteUser[]>([]);
     const [isMuted, setIsMuted] = useState(false);
@@ -118,6 +122,17 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
+    
+     useEffect(() => {
+        const checkIsMobile = () => window.innerWidth < 768;
+        setIsChatVisible(!checkIsMobile()); // Show chat by default on desktop
+
+        const handleResize = () => {
+            setIsChatVisible(!checkIsMobile());
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     useEffect(() => {
         let isMounted = true;
@@ -262,30 +277,30 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
     if (!room) return <div className="h-full w-full flex items-center justify-center bg-black text-white">Connecting...</div>;
 
     return (
-        <div className="h-full w-full flex flex-col md:flex-row bg-black text-white overflow-hidden">
-            <main className={`flex-grow grid ${gridLayout} gap-1 relative`}>
+        <div className="h-full w-full flex bg-black text-white overflow-hidden relative">
+            <main className={`flex-grow grid ${gridLayout} gap-2 p-2 transition-all duration-300`}>
                 {allParticipants.map(p => {
                     const isLocal = p.id === currentUser.id;
+// FIX: The error indicates a string property is being called as a function. The most likely candidate is `p.id()`. `p.id` is a string and should be accessed as a property.
                     const agoraUid = stringToIntegerHash(p.id);
                     const agoraUser = isLocal ? undefined : remoteUsersMap.get(agoraUid);
                     const participantState = isLocal ? { ...p, isMuted, isCameraOff } : p;
                     const agoraUidForSpeakingCheck = isLocal ? agoraClient.current?.uid : agoraUser?.uid;
 
                     return (
-                        <div key={p.id} className="relative rounded-lg overflow-hidden">
-                            <ParticipantVideo
-                                participant={participantState}
-                                isLocal={isLocal}
-                                isSpeaking={activeSpeakerUid === agoraUidForSpeakingCheck}
-                                localVideoTrack={localVideoTrack.current}
-                                remoteUser={agoraUser}
-                            />
-                        </div>
+                        <ParticipantVideo
+                            key={p.id}
+                            participant={participantState}
+                            isLocal={isLocal}
+                            isSpeaking={activeSpeakerUid === agoraUidForSpeakingCheck}
+                            localVideoTrack={localVideoTrack.current}
+                            remoteUser={agoraUser}
+                        />
                     );
                 })}
             </main>
-            <aside className="w-full md:w-80 flex-shrink-0 bg-black/30 backdrop-blur-sm border-l border-white/10 flex flex-col z-10 h-1/2 md:h-full">
-                 <h2 className="font-bold text-lg p-3 flex-shrink-0">{room.topic}</h2>
+            <aside className={`absolute md:relative top-0 right-0 h-full w-[320px] flex-shrink-0 bg-black/50 backdrop-blur-md border-l border-white/10 flex flex-col z-10 transition-transform duration-300 ${isChatVisible ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
+                 <h2 className="font-bold text-lg p-3 flex-shrink-0 border-b border-slate-700/50">{room.topic}</h2>
                  <div className="flex-grow overflow-y-auto space-y-3 no-scrollbar p-2">
                      {messages.map(msg => <ChatMessage key={msg.id} message={msg} isMe={msg.sender.id === currentUser.id} />)}
                      <div ref={messagesEndRef} />
@@ -320,16 +335,19 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
                     </form>
                 </footer>
             </aside>
-            <div className="absolute bottom-0 left-0 md:left-1/2 md:-translate-x-1/2 p-4 z-20 bg-gradient-to-t from-black/80 to-transparent">
-                <div className="flex items-center justify-center gap-4">
-                    <button onClick={toggleMute} disabled={!isMicAvailable} className={`p-4 rounded-full transition-colors ${!isMicAvailable ? 'bg-red-600/50' : isMuted ? 'bg-rose-600' : 'bg-slate-700/80'}`}>
+            <div className="absolute bottom-0 left-0 right-0 p-4 z-20 flex justify-center">
+                <div className="flex items-center justify-center gap-4 bg-black/50 backdrop-blur-md p-3 rounded-full">
+                    <button onClick={toggleMute} disabled={!isMicAvailable} className={`p-4 rounded-full transition-colors ${!isMicAvailable ? 'bg-red-600/50 cursor-not-allowed' : isMuted ? 'bg-rose-600' : 'bg-slate-700/80'}`}>
                         <Icon name={!isMicAvailable || isMuted ? 'microphone-slash' : 'mic'} className="w-6 h-6" />
                     </button>
-                     <button onClick={toggleCamera} disabled={!isCamAvailable} className={`p-4 rounded-full transition-colors ${!isCamAvailable ? 'bg-red-600/50' : isCameraOff ? 'bg-rose-600' : 'bg-slate-700/80'}`}>
+                     <button onClick={toggleCamera} disabled={!isCamAvailable} className={`p-4 rounded-full transition-colors ${!isCamAvailable ? 'bg-red-600/50 cursor-not-allowed' : isCameraOff ? 'bg-rose-600' : 'bg-slate-700/80'}`}>
                         <Icon name={!isCamAvailable || isCameraOff ? 'video-camera-slash' : 'video-camera'} className="w-6 h-6" />
                     </button>
                     <button onClick={handleLeaveOrEnd} className="p-4 rounded-full bg-red-600">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" transform="rotate(-135 12 12)"/></svg>
+                    </button>
+                    <button onClick={() => setIsChatVisible(v => !v)} className="p-4 rounded-full bg-slate-700/80 md:hidden">
+                       <Icon name="comment" className="w-6 h-6" />
                     </button>
                 </div>
             </div>
