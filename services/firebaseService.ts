@@ -1622,6 +1622,19 @@ async getAudioRoomDetails(roomId: string): Promise<LiveAudioRoom | null> {
     }
     return null;
 },
+async getRoomDetails(roomId: string, type: 'audio' | 'video'): Promise<LiveAudioRoom | LiveVideoRoom | null> {
+    const collectionName = type === 'audio' ? 'liveAudioRooms' : 'liveVideoRooms';
+    const doc = await db.collection(collectionName).doc(roomId).get();
+    if (doc.exists) {
+        const data = doc.data();
+        return {
+            id: doc.id,
+            ...data,
+            createdAt: data.createdAt instanceof firebase.firestore.Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString()
+        } as LiveAudioRoom | LiveVideoRoom;
+    }
+    return null;
+},
 async raiseHandInAudioRoom(userId: string, roomId: string): Promise<void> {
     await db.collection('liveAudioRooms').doc(roomId).update({ raisedHands: arrayUnion(userId) });
 },
