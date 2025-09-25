@@ -1,18 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { LiveVideoRoom, User, VideoParticipantState, Call } from '../types';
+import { LiveVideoRoom, User, VideoParticipantState } from '../types';
 import { geminiService } from '../services/geminiService';
 import Icon from './Icon';
 import { AGORA_APP_ID } from '../constants';
 import AgoraRTC from 'agora-rtc-sdk-ng';
 import type { IAgoraRTCClient, IAgoraRTCRemoteUser, IMicrophoneAudioTrack, ICameraVideoTrack } from 'agora-rtc-sdk-ng';
-import { useSettings } from '../contexts/SettingsContext';
-
-interface LiveVideoRoomScreenProps {
-  currentUser: User;
-  roomId: string;
-  onGoBack: () => void;
-  onSetTtsMessage: (message: string) => void;
-}
 
 // Mock Chat Messages for UI demonstration
 const mockChat = [
@@ -31,7 +23,6 @@ function stringToIntegerHash(str: string): number {
     hash = ((hash << 5) - hash) + char;
     hash |= 0; // Convert to 32bit integer
   }
-  // Ensure it's a positive integer, as required by Agora for UIDs.
   return Math.abs(hash);
 }
 
@@ -88,6 +79,13 @@ const ParticipantVideo: React.FC<{
     );
 };
 
+// Fix: Define the props interface for the component.
+interface LiveVideoRoomScreenProps {
+    currentUser: User;
+    roomId: string;
+    onGoBack: () => void;
+    onSetTtsMessage: (message: string) => void;
+}
 
 // Main Component
 const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, roomId, onGoBack, onSetTtsMessage }) => {
@@ -104,14 +102,26 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
     const localAudioTrack = useRef<IMicrophoneAudioTrack | null>(null);
     const localVideoTrack = useRef<ICameraVideoTrack | null>(null);
     const [localVideoTrackState, setLocalVideoTrackState] = useState<ICameraVideoTrack | null>(null);
-    const callStatusRef = useRef<Call['status'] | null>(null);
 
-    const handleHangUp = useCallback(() => {
-        geminiService.endLiveVideoRoom(currentUser.id, roomId);
-    }, [currentUser.id, roomId]);
-    
+    const isHost = room?.host.id === currentUser.id;
+
+    // Firestore real-time listener for Room Metadata
+    useEffect(() => {
+        const unsubscribe = geminiService.listenToVideoRoom(roomId, (roomDetails) => {
+            if (roomDetails) {
+                setRoom(roomDetails);
+            } else {
+                onGoBack();
+            }
+            setIsLoading(false);
+        });
+        return () => unsubscribe();
+    }, [roomId, onGoBack]);
+
     // Agora Lifecycle
     useEffect(() => {
+        if (!room) return; // Don't start Agora until we have room details
+
         let isMounted = true;
         if (!AGORA_APP_ID) {
             onSetTtsMessage("Agora App ID is not configured.");
@@ -130,48 +140,55 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
             });
             client.on('user-left', () => { if(isMounted) setRemoteUsers(Array.from(client.remoteUsers)); });
             client.on('user-unpublished', () => { if(isMounted) setRemoteUsers(Array.from(client.remoteUsers)); });
-            client.enableAudioVolumeIndicator();
-            client.on('volume-indicator', (volumes) => {
-                const mainSpeaker = volumes.reduce((max, current) => current.level > max.level ? current : max, { level: 0 });
-                if (isMounted) setActiveSpeakerId(mainSpeaker.level > 5 ? String(mainSpeaker.uid) : null);
-            });
+            
+            if (isHost) {
+                client.enableAudioVolumeIndicator();
+                client.on('volume-indicator', (volumes) => {
+                    const mainSpeaker = volumes.reduce((max, current) => current.level > max.level ? current : max, { level: 0 });
+                    if (isMounted) setActiveSpeakerId(mainSpeaker.level > 5 ? String(mainSpeaker.uid) : null);
+                });
+            }
+
+            await client.setClientRole(isHost ? 'host' : 'audience');
 
             const uid = stringToIntegerHash(currentUser.id);
             const token = await geminiService.getAgoraToken(roomId, uid);
             if (!token) throw new Error("Failed to retrieve Agora token.");
             await client.join(AGORA_APP_ID, roomId, token, uid);
 
-            let audioTrack: IMicrophoneAudioTrack | null = null;
-            let videoTrack: ICameraVideoTrack | null = null;
-            
-            try {
-                audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
-                if (!isMounted) { audioTrack.close(); return; }
-                localAudioTrack.current = audioTrack;
-                setIsMicAvailable(true);
-            } catch (e) {
-                console.warn("Could not get microphone track:", e);
-                if (!isMounted) return;
-                setIsMicAvailable(false);
-                setIsMuted(true);
-            }
-
-            try {
-                videoTrack = await AgoraRTC.createCameraVideoTrack();
-                if (!isMounted) { videoTrack.close(); audioTrack?.close(); return; }
-                localVideoTrack.current = videoTrack;
-                setLocalVideoTrackState(videoTrack);
-                setIsCamAvailable(true);
-            } catch (e) {
-                console.warn("Could not get camera track:", e);
-                if (!isMounted) { audioTrack?.close(); return; }
-                setIsCamAvailable(false);
-                setIsCameraOff(true);
-            }
-
-            const tracksToPublish = [audioTrack, videoTrack].filter(t => t !== null) as (IMicrophoneAudioTrack | ICameraVideoTrack)[];
-            if (tracksToPublish.length > 0) {
-                await client.publish(tracksToPublish);
+            if (isHost) {
+                let audioTrack: IMicrophoneAudioTrack | null = null;
+                let videoTrack: ICameraVideoTrack | null = null;
+                
+                try {
+                    audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+                    if (!isMounted) { audioTrack.close(); return; }
+                    localAudioTrack.current = audioTrack;
+                    setIsMicAvailable(true);
+                } catch (e) {
+                    console.warn("Could not get microphone track:", e);
+                    if (!isMounted) return;
+                    setIsMicAvailable(false);
+                    setIsMuted(true);
+                }
+    
+                try {
+                    videoTrack = await AgoraRTC.createCameraVideoTrack();
+                    if (!isMounted) { videoTrack.close(); audioTrack?.close(); return; }
+                    localVideoTrack.current = videoTrack;
+                    setLocalVideoTrackState(videoTrack);
+                    setIsCamAvailable(true);
+                } catch (e) {
+                    console.warn("Could not get camera track:", e);
+                    if (!isMounted) { audioTrack?.close(); return; }
+                    setIsCamAvailable(false);
+                    setIsCameraOff(true);
+                }
+    
+                const tracksToPublish = [audioTrack, videoTrack].filter(t => t !== null) as (IMicrophoneAudioTrack | ICameraVideoTrack)[];
+                if (tracksToPublish.length > 0) {
+                    await client.publish(tracksToPublish);
+                }
             }
         };
 
@@ -192,38 +209,27 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
             agoraClient.current?.leave();
             geminiService.leaveLiveVideoRoom(currentUser.id, roomId);
         };
-    }, [roomId, currentUser.id, onGoBack, onSetTtsMessage]);
-
-    // Firestore real-time listener for Room Metadata
-    useEffect(() => {
-        const unsubscribe = geminiService.listenToVideoRoom(roomId, (roomDetails) => {
-            if (roomDetails) {
-                setRoom(roomDetails);
-                 callStatusRef.current = roomDetails?.status || null;
-                if (!roomDetails || ['ended', 'declined', 'missed'].includes(roomDetails.status)) {
-                    setTimeout(() => {
-                        if (callStatusRef.current !== 'active' && callStatusRef.current !== 'ringing') {
-                            onGoBack();
-                        }
-                    }, 2000);
-                }
-            } else {
-                onGoBack();
+    }, [room, roomId, currentUser.id, onGoBack, onSetTtsMessage, isHost]);
+    
+    const handleLeaveOrEnd = useCallback(() => {
+        if (isHost) {
+            if (window.confirm("Are you sure you want to end this room for everyone?")) {
+                geminiService.endLiveVideoRoom(currentUser.id, roomId);
             }
-            setIsLoading(false);
-        });
-        return () => unsubscribe();
-    }, [roomId, onGoBack]);
+        } else {
+            onGoBack();
+        }
+    }, [isHost, currentUser.id, roomId, onGoBack]);
 
     const toggleMute = () => {
-        if (!isMicAvailable) return;
+        if (!isMicAvailable || !isHost) return;
         const muted = !isMuted;
         localAudioTrack.current?.setMuted(muted);
         setIsMuted(muted);
     };
 
     const toggleCamera = () => {
-        if (!isCamAvailable) return;
+        if (!isCamAvailable || !isHost) return;
         const cameraOff = !isCameraOff;
         localVideoTrack.current?.setEnabled(!cameraOff);
         setIsCameraOff(cameraOff);
@@ -253,13 +259,12 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
 
     const selfState = { ...currentUser, isMuted, isCameraOff };
     const host = room.participants.find(p => p.id === room.host.id) || room.host;
-    const selfIsHost = currentUser.id === host.id;
     const guests = room.participants.filter(p => p.id !== host.id);
     
-    const mainParticipant = selfIsHost ? selfState : host;
-    const mainIsLocal = selfIsHost;
+    const mainParticipant = host;
+    const mainIsLocal = currentUser.id === host.id;
     const hostAgoraUid = String(stringToIntegerHash(host.id));
-    const mainRemoteUser = selfIsHost ? undefined : remoteUsersMap.get(hostAgoraUid);
+    const mainRemoteUser = remoteUsersMap.get(hostAgoraUid);
 
     return (
         <div className="relative h-full w-full bg-black text-white overflow-hidden">
@@ -267,7 +272,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
             <div className="absolute inset-0">
                 <ParticipantVideo
                     layout="main"
-                    participant={mainParticipant}
+                    participant={mainIsLocal ? selfState : mainParticipant}
                     isLocal={mainIsLocal}
                     isSpeaking={activeFirebaseSpeakerId === mainParticipant.id}
                     localVideoTrack={localVideoTrackState}
@@ -285,11 +290,9 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
                         <p className="text-xs text-slate-300">{room.participants.length} viewers</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                     <button onClick={onGoBack} className="w-8 h-8 bg-black/40 rounded-full flex items-center justify-center backdrop-blur-sm">
-                        <Icon name="close" className="w-5 h-5"/>
-                    </button>
-                </div>
+                 <button onClick={onGoBack} className="w-8 h-8 bg-black/40 rounded-full flex items-center justify-center backdrop-blur-sm">
+                    <Icon name="close" className="w-5 h-5"/>
+                </button>
             </header>
 
             {/* Guests Video List */}
@@ -323,15 +326,23 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
                 </div>
                 <div className="flex items-center gap-3">
                     <input type="text" placeholder="Add a comment..." className="flex-grow bg-black/40 border border-slate-600 rounded-full py-2.5 px-4 text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-rose-500 backdrop-blur-sm"/>
-                    <button onClick={toggleMute} disabled={!isMicAvailable} className={`w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors ${!isMicAvailable ? 'bg-red-600/50 cursor-not-allowed' : isMuted ? 'bg-rose-600' : 'bg-black/40'}`}>
-                        <Icon name={!isMicAvailable || isMuted ? 'microphone-slash' : 'mic'} className="w-6 h-6" />
-                    </button>
-                    <button onClick={toggleCamera} disabled={!isCamAvailable} className={`w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors ${!isCamAvailable ? 'bg-red-600/50 cursor-not-allowed' : isCameraOff ? 'bg-rose-600' : 'bg-black/40'}`}>
-                        <Icon name={!isCamAvailable || isCameraOff ? 'video-camera-slash' : 'video-camera'} className="w-6 h-6" />
-                    </button>
-                    <button onClick={handleHangUp} className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
-                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" transform="rotate(-135 12 12)"/></svg>
-                    </button>
+                    {isHost ? (
+                        <>
+                            <button onClick={toggleMute} disabled={!isMicAvailable} className={`w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors ${!isMicAvailable ? 'bg-red-600/50 cursor-not-allowed' : isMuted ? 'bg-rose-600' : 'bg-black/40'}`}>
+                                <Icon name={!isMicAvailable || isMuted ? 'microphone-slash' : 'mic'} className="w-6 h-6" />
+                            </button>
+                            <button onClick={toggleCamera} disabled={!isCamAvailable} className={`w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors ${!isCamAvailable ? 'bg-red-600/50 cursor-not-allowed' : isCameraOff ? 'bg-rose-600' : 'bg-black/40'}`}>
+                                <Icon name={!isCamAvailable || isCameraOff ? 'video-camera-slash' : 'video-camera'} className="w-6 h-6" />
+                            </button>
+                             <button onClick={handleLeaveOrEnd} className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" transform="rotate(-135 12 12)"/></svg>
+                            </button>
+                        </>
+                    ) : (
+                        <button onClick={handleLeaveOrEnd} className="bg-rose-600 hover:bg-rose-500 text-white font-bold py-2.5 px-5 rounded-full transition-colors flex items-center justify-center gap-2">
+                            <span>Leave</span>
+                        </button>
+                    )}
                 </div>
             </footer>
         </div>
