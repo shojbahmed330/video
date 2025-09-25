@@ -397,10 +397,3 @@ export interface LiveAudioRoomMessage {
   createdAt: string;
   reactions: { [emoji: string]: string[] };
 }
-
-export interface LiveVideoRoomMessage {
-  id: string;
-  sender: Author;
-  text: string;
-  createdAt: string;
-}

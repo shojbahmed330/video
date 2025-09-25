@@ -40,6 +40,10 @@ const REACTION_COLORS: { [key: string]: string } = {
 };
 
 export const PostCard: React.FC<PostCardProps> = ({ post, currentUser, isActive, isPlaying, onPlayPause, onReact, onViewPost, onAuthorClick, onStartComment, onSharePost, onAdClick, onDeletePost, onOpenPhotoViewer, groupRole, isGroupAdmin, isPinned, onPinPost, onUnpinPost, onVote }) => {
+  if (!post || !post.author) {
+    return null;
+  }
+    
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isMenuOpen, setMenuOpen] = useState(false);
@@ -51,12 +55,12 @@ export const PostCard: React.FC<PostCardProps> = ({ post, currentUser, isActive,
 
 
   const myReaction = React.useMemo(() => {
-    if (!currentUser || !post?.reactions) return null;
+    if (!currentUser || !post.reactions) return null;
     return post.reactions[currentUser.id] || null;
-  }, [currentUser, post?.reactions]);
+  }, [currentUser, post.reactions]);
 
   const topReactions = React.useMemo(() => {
-    if (!post?.reactions) return [];
+    if (!post.reactions) return [];
     const emojiCounts: { [emoji: string]: number } = {};
     for (const userId in post.reactions) {
         const emoji = post.reactions[userId];
@@ -66,28 +70,34 @@ export const PostCard: React.FC<PostCardProps> = ({ post, currentUser, isActive,
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
         .map(entry => entry[0]);
-  }, [post?.reactions]);
+  }, [post.reactions]);
 
   const reactionCount = useMemo(() => {
-    if (!post?.reactions) return 0;
+    if (!post.reactions) return 0;
     return Object.keys(post.reactions).length;
-  }, [post?.reactions]);
+  }, [post.reactions]);
 
-  const userVotedOptionIndex = currentUser && post?.poll ? post.poll.options.findIndex(opt => opt.votedBy.includes(currentUser.id)) : -1;
-  const totalVotes = post?.poll ? post.poll.options.reduce((sum, opt) => sum + opt.votes, 0) : 0;
-  const isAuthor = currentUser?.id === post?.author?.id;
+  const userVotedOptionIndex = currentUser && post.poll ? post.poll.options.findIndex(opt => opt.votedBy.includes(currentUser.id)) : -1;
+  const totalVotes = post.poll ? post.poll.options.reduce((sum, opt) => sum + opt.votes, 0) : 0;
+  const isAuthor = currentUser?.id === post.author.id;
   const canShowMenu = isAuthor || isGroupAdmin;
+
+
+  const timeAgo = new Date(post.createdAt).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric'
+  });
 
   useEffect(() => {
     const videoElement = videoRef.current;
     if (videoElement) {
-      if (isActive && post?.isSponsored) { // Only autoplay sponsored content
+      if (isActive && post.isSponsored) { // Only autoplay sponsored content
         videoElement.play().catch(error => console.log("Autoplay prevented:", error));
       } else {
         videoElement.pause();
       }
     }
-  }, [isActive, post?.isSponsored]);
+  }, [isActive, post.isSponsored]);
 
   useEffect(() => {
     const audioElement = audioRef.current;
@@ -98,7 +108,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, currentUser, isActive,
             audioElement.pause();
         }
     }
-  }, [isPlaying, isActive, post?.audioUrl]);
+  }, [isPlaying, isActive, post.audioUrl]);
   
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -110,15 +120,6 @@ export const PostCard: React.FC<PostCardProps> = ({ post, currentUser, isActive,
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
   
-  if (!post || !post.author) {
-    return null;
-  }
-    
-  const timeAgo = new Date(post.createdAt).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric'
-  });
-
   const handleReaction = (e: React.MouseEvent, emoji: string) => {
       e.stopPropagation();
       onReact(post.id, emoji);
