@@ -125,6 +125,8 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
     const pipDragStartRef = useRef({ x: 0, y: 0, initialX: 0, initialY: 0 });
     const callStatusRef = useRef<Call['status'] | null>(null);
 
+    const remoteUsersMap = useMemo(() => new Map(remoteUsers.map(u => [u.uid, u])), [remoteUsers]);
+
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
@@ -231,8 +233,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
     const allParticipants = room?.participants || [];
     const localParticipant = allParticipants.find(p => p.id === currentUser.id);
     const remoteParticipants = allParticipants.filter(p => p.id !== currentUser.id);
-    const remoteUsersMap = useMemo(() => new Map(remoteUsers.map(u => [u.uid, u])), [remoteUsers]);
-
+    
     const activeSpeaker = allParticipants.find(p => stringToIntegerHash(p.id) === activeSpeakerUid);
     let mainParticipant = activeSpeaker && activeSpeaker.id !== currentUser.id ? activeSpeaker : remoteParticipants[0] || localParticipant;
     if (allParticipants.length === 1) mainParticipant = localParticipant;
