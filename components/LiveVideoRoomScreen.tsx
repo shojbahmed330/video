@@ -122,13 +122,11 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
     useEffect(() => {
         let isMounted = true;
 
-        const setupAgora = async (initialRoom: LiveVideoRoom) => {
+        const setupAgora = async () => {
             if (!AGORA_APP_ID) throw new Error("Agora App ID is not configured.");
 
             const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
             agoraClient.current = client;
-
-            const isHost = initialRoom.host.id === currentUser.id;
 
             client.on('user-published', async (user, mediaType) => {
                 await client.subscribe(user, mediaType);
@@ -144,8 +142,6 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
                 const mainSpeaker = volumes.reduce((max, current) => current.level > max.level ? current : max, { level: 0 });
                 if (isMounted) setActiveSpeakerUid(mainSpeaker.level > 5 ? mainSpeaker.uid : null);
             });
-
-            await client.setClientRole(isHost ? 'host' : 'audience');
             
             const uid = stringToIntegerHash(currentUser.id);
             const token = await geminiService.getAgoraToken(roomId, uid);
@@ -153,52 +149,43 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
 
             await client.join(AGORA_APP_ID, roomId, token, uid);
 
-            if (isHost) {
-                const tracksToPublish: (IMicrophoneAudioTrack | ICameraVideoTrack)[] = [];
-                try {
-                    const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
-                    localAudioTrack.current = audioTrack;
-                    tracksToPublish.push(audioTrack);
-                    if (isMounted) setIsMicAvailable(true);
-                } catch (e) { 
-                    console.warn("Could not get mic", e); 
-                    if (isMounted) {
-                        setIsMicAvailable(false);
-                        setIsMuted(true);
-                        geminiService.updateParticipantStateInVideoRoom(roomId, currentUser.id, { isMuted: true });
-                    }
+            const tracksToPublish: (IMicrophoneAudioTrack | ICameraVideoTrack)[] = [];
+            try {
+                const audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+                localAudioTrack.current = audioTrack;
+                tracksToPublish.push(audioTrack);
+                if (isMounted) setIsMicAvailable(true);
+            } catch (e) { 
+                console.warn("Could not get mic", e); 
+                if (isMounted) {
+                    setIsMicAvailable(false);
+                    setIsMuted(true);
+                    geminiService.updateParticipantStateInVideoRoom(roomId, currentUser.id, { isMuted: true });
                 }
+            }
 
-                try {
-                    const videoTrack = await AgoraRTC.createCameraVideoTrack();
-                    localVideoTrack.current = videoTrack;
-                    tracksToPublish.push(videoTrack);
-                    if (isMounted) setIsCamAvailable(true);
-                } catch (e) { 
-                    console.warn("Could not get cam", e); 
-                    if (isMounted) {
-                        setIsCamAvailable(false);
-                        setIsCameraOff(true);
-                        geminiService.updateParticipantStateInVideoRoom(roomId, currentUser.id, { isCameraOff: true });
-                    }
+            try {
+                const videoTrack = await AgoraRTC.createCameraVideoTrack();
+                localVideoTrack.current = videoTrack;
+                tracksToPublish.push(videoTrack);
+                if (isMounted) setIsCamAvailable(true);
+            } catch (e) { 
+                console.warn("Could not get cam", e); 
+                if (isMounted) {
+                    setIsCamAvailable(false);
+                    setIsCameraOff(true);
+                    geminiService.updateParticipantStateInVideoRoom(roomId, currentUser.id, { isCameraOff: true });
                 }
+            }
 
-                if (tracksToPublish.length > 0) {
-                    await client.publish(tracksToPublish);
-                }
+            if (tracksToPublish.length > 0) {
+                await client.publish(tracksToPublish);
             }
         };
 
         const initialize = async () => {
-            const initialRoom = await geminiService.getRoomDetails(roomId, 'video');
-            if (!isMounted || !initialRoom) {
-                onGoBack();
-                return;
-            }
-
-            setRoom(initialRoom as LiveVideoRoom);
             await geminiService.joinLiveVideoRoom(currentUser.id, roomId);
-            await setupAgora(initialRoom as LiveVideoRoom);
+            await setupAgora();
         };
         
         initialize().catch(err => {
