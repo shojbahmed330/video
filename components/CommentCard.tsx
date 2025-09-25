@@ -20,10 +20,6 @@ interface CommentCardProps {
 const AVAILABLE_REACTIONS = ['❤️', '😂', '👍', '😢', '😡', '🔥', '😮'];
 
 const CommentCard: React.FC<CommentCardProps> = ({ comment, currentUser, isPlaying, onPlayPause, onAuthorClick, onReply, onReact, onEdit, onDelete }) => {
-  if (!comment || !comment.author) {
-    return null;
-  }
-  
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPickerOpen, setPickerOpen] = useState(false);
   const pickerContainerRef = useRef<HTMLDivElement>(null);
@@ -41,6 +37,7 @@ const CommentCard: React.FC<CommentCardProps> = ({ comment, currentUser, isPlayi
   }, []);
 
   const timeAgo = useMemo(() => {
+      if (!comment?.createdAt) return 'Just now';
       const date = new Date(comment.createdAt);
       if (isNaN(date.getTime())) {
           return 'Just now';
@@ -58,7 +55,7 @@ const CommentCard: React.FC<CommentCardProps> = ({ comment, currentUser, isPlayi
       interval = seconds / 60;
       if (interval > 1) return `${Math.floor(interval)}m`;
       return 'Just now';
-  }, [comment.createdAt]);
+  }, [comment?.createdAt]);
 
 
   useEffect(() => {
@@ -86,16 +83,20 @@ const CommentCard: React.FC<CommentCardProps> = ({ comment, currentUser, isPlayi
         }
     }
   }, [onPlayPause]);
+  
+  const myReaction = comment?.reactions?.[currentUser.id];
+  const reactionCount = Object.keys(comment?.reactions || {}).length;
+  const isAuthor = comment?.author?.id === currentUser.id;
+
+  if (!comment || !comment.author) {
+    return null;
+  }
 
   const handleReact = (e: React.MouseEvent, emoji: string) => {
     e.stopPropagation();
     onReact(comment.id, emoji);
     setPickerOpen(false);
   };
-  
-  const myReaction = comment.reactions?.[currentUser.id];
-  const reactionCount = Object.keys(comment.reactions || {}).length;
-  const isAuthor = comment.author.id === currentUser.id;
 
   const handleEdit = () => {
       if (onEdit && comment.text) {

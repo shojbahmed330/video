@@ -22,13 +22,6 @@ interface ImageModalProps {
 const REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
 const ImageModal: React.FC<ImageModalProps> = ({ post, currentUser, isLoading, onClose, onReactToPost, onReactToComment, onPostComment, onEditComment, onDeleteComment, onOpenProfile, onSharePost }) => {
-  // FIX: This is the most robust way to prevent the crash.
-  // If the post data is null, OR if the author field is missing (e.g. user was deleted),
-  // we render nothing. This completely avoids any attempt to access properties of a null object.
-  if (!post || !post.author) {
-    return null;
-  }
-  
   const [playingCommentId, setPlayingCommentId] = useState<string | null>(null);
   const [newCommentText, setNewCommentText] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
@@ -61,7 +54,7 @@ const ImageModal: React.FC<ImageModalProps> = ({ post, currentUser, isLoading, o
   }, [replyingTo]);
   
   const commentThreads = useMemo(() => {
-    if (!post.comments) return [];
+    if (!post?.comments) return [];
     
     const comments = [...post.comments].filter(Boolean).sort((a,b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
@@ -82,7 +75,7 @@ const ImageModal: React.FC<ImageModalProps> = ({ post, currentUser, isLoading, o
     });
 
     return topLevelComments;
-  }, [post.comments]);
+  }, [post?.comments]);
 
   const handlePlayComment = (comment: Comment) => {
     if (comment.type !== 'audio') return;
@@ -122,24 +115,27 @@ const ImageModal: React.FC<ImageModalProps> = ({ post, currentUser, isLoading, o
   };
 
   const myReaction = useMemo(() => {
-    if (!currentUser || !post.reactions) return null;
+    if (!currentUser || !post?.reactions) return null;
     return post.reactions[currentUser.id] || null;
-  }, [currentUser, post.reactions]);
+  }, [currentUser, post?.reactions]);
 
   const reactionCount = useMemo(() => {
-    if (!post.reactions) return 0;
+    if (!post?.reactions) return 0;
     return Object.keys(post.reactions).length;
-  }, [post.reactions]);
+  }, [post?.reactions]);
 
   const topReactions = useMemo(() => {
-    if (!post.reactions) return [];
+    if (!post?.reactions) return [];
     const counts: { [key: string]: number } = {};
     Object.values(post.reactions).forEach(emoji => {
-        // FIX: Cast `emoji` to `string` to use it as an index type, as Object.values can infer it as `unknown`.
         counts[emoji as string] = (counts[emoji as string] || 0) + 1;
     });
     return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0]);
-  }, [post.reactions]);
+  }, [post?.reactions]);
+
+  if (!post || !post.author) {
+    return null;
+  }
 
   if (isLoading) {
     return (
