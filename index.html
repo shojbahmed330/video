@@ -96,6 +96,47 @@
         font-size: 2rem;
         animation: float-heart 2.5s ease-out forwards;
       }
+      /* Video Room Animations */
+      @keyframes pulse-glow {
+        0%, 100% {
+          box-shadow: 0 0 5px rgba(52, 211, 153, 0.5), 0 0 10px rgba(52, 211, 153, 0.5), 0 0 15px rgba(16, 185, 129, 0.5);
+          border-color: rgba(110, 231, 183, 1);
+        }
+        50% {
+          box-shadow: 0 0 10px rgba(52, 211, 153, 0.7), 0 0 20px rgba(52, 211, 153, 0.7), 0 0 30px rgba(16, 185, 129, 0.7);
+          border-color: rgba(255, 255, 255, 1);
+        }
+      }
+      .animate-pulse-glow {
+        animation: pulse-glow 2.5s ease-in-out infinite;
+        border-width: 3px;
+      }
+      @keyframes float-emoji {
+        0% {
+          transform: translateY(0) scale(0.4);
+          opacity: 1;
+        }
+        100% {
+          transform: translateY(-400px) scale(1.8);
+          opacity: 0;
+        }
+      }
+      .float-emoji-container {
+        position: absolute;
+        bottom: 120px; /* Above controls */
+        right: 20px;
+        height: 400px;
+        width: 100px;
+        pointer-events: none;
+        z-index: 25;
+      }
+      .float-emoji-container .emoji {
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        font-size: 2rem;
+        animation: float-emoji 3s ease-out forwards;
+      }
     </style>
     
   <script type="importmap">
