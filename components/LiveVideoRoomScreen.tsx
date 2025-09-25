@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-// FIX: Import the 'Call' type to resolve the reference error.
 import { LiveVideoRoom, User, VideoParticipantState, Call } from '../types';
 import { geminiService } from '../services/geminiService';
 import Icon from './Icon';
@@ -24,6 +23,17 @@ const mockChat = [
     { id: 5, name: 'Aakash', message: 'Awesome content!' },
     { id: 6, name: 'Sumaiya', message: 'Very informative.' },
 ];
+
+function stringToIntegerHash(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash |= 0; // Convert to 32bit integer
+  }
+  // Ensure it's a positive integer, as required by Agora for UIDs.
+  return Math.abs(hash);
+}
 
 const ParticipantVideo: React.FC<{
     layout: 'main' | 'guest';
@@ -86,6 +96,8 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
     const [remoteUsers, setRemoteUsers] = useState<IAgoraRTCRemoteUser[]>([]);
     const [isMuted, setIsMuted] = useState(false);
     const [isCameraOff, setIsCameraOff] = useState(false);
+    const [isMicAvailable, setIsMicAvailable] = useState(true);
+    const [isCamAvailable, setIsCamAvailable] = useState(true);
     const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
 
     const agoraClient = useRef<IAgoraRTCClient | null>(null);
@@ -124,17 +136,43 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
                 if (isMounted) setActiveSpeakerId(mainSpeaker.level > 5 ? String(mainSpeaker.uid) : null);
             });
 
-            const uid = parseInt(currentUser.id, 36) % 10000000;
+            const uid = stringToIntegerHash(currentUser.id);
             const token = await geminiService.getAgoraToken(roomId, uid);
             if (!token) throw new Error("Failed to retrieve Agora token.");
             await client.join(AGORA_APP_ID, roomId, token, uid);
 
-            const [audioTrack, videoTrack] = await AgoraRTC.createMicrophoneAndCameraTracks();
-            if(!isMounted) return;
-            localAudioTrack.current = audioTrack;
-            localVideoTrack.current = videoTrack;
-            setLocalVideoTrackState(videoTrack);
-            await client.publish([audioTrack, videoTrack]);
+            let audioTrack: IMicrophoneAudioTrack | null = null;
+            let videoTrack: ICameraVideoTrack | null = null;
+            
+            try {
+                audioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+                if (!isMounted) { audioTrack.close(); return; }
+                localAudioTrack.current = audioTrack;
+                setIsMicAvailable(true);
+            } catch (e) {
+                console.warn("Could not get microphone track:", e);
+                if (!isMounted) return;
+                setIsMicAvailable(false);
+                setIsMuted(true);
+            }
+
+            try {
+                videoTrack = await AgoraRTC.createCameraVideoTrack();
+                if (!isMounted) { videoTrack.close(); audioTrack?.close(); return; }
+                localVideoTrack.current = videoTrack;
+                setLocalVideoTrackState(videoTrack);
+                setIsCamAvailable(true);
+            } catch (e) {
+                console.warn("Could not get camera track:", e);
+                if (!isMounted) { audioTrack?.close(); return; }
+                setIsCamAvailable(false);
+                setIsCameraOff(true);
+            }
+
+            const tracksToPublish = [audioTrack, videoTrack].filter(t => t !== null) as (IMicrophoneAudioTrack | ICameraVideoTrack)[];
+            if (tracksToPublish.length > 0) {
+                await client.publish(tracksToPublish);
+            }
         };
 
         geminiService.joinLiveVideoRoom(currentUser.id, roomId).then(() => {
@@ -178,12 +216,14 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
     }, [roomId, onGoBack]);
 
     const toggleMute = () => {
+        if (!isMicAvailable) return;
         const muted = !isMuted;
         localAudioTrack.current?.setMuted(muted);
         setIsMuted(muted);
     };
 
     const toggleCamera = () => {
+        if (!isCamAvailable) return;
         const cameraOff = !isCameraOff;
         localVideoTrack.current?.setEnabled(!cameraOff);
         setIsCameraOff(cameraOff);
@@ -193,7 +233,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
         if (!room) return new Map<string, string>();
         const map = new Map<string, string>();
         room.participants.forEach(p => {
-            const agoraUID = String(parseInt(p.id, 36) % 10000000);
+            const agoraUID = String(stringToIntegerHash(p.id));
             map.set(agoraUID, p.id);
         });
         return map;
@@ -218,7 +258,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
     
     const mainParticipant = selfIsHost ? selfState : host;
     const mainIsLocal = selfIsHost;
-    const hostAgoraUid = String(parseInt(host.id, 36) % 10000000);
+    const hostAgoraUid = String(stringToIntegerHash(host.id));
     const mainRemoteUser = selfIsHost ? undefined : remoteUsersMap.get(hostAgoraUid);
 
     return (
@@ -255,7 +295,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
             {/* Guests Video List */}
             <div className="absolute top-20 right-4 w-28 space-y-2 z-10 flex flex-col">
                 {guests.map(guest => {
-                    const guestAgoraUid = String(parseInt(guest.id, 36) % 10000000);
+                    const guestAgoraUid = String(stringToIntegerHash(guest.id));
                     const remoteUserForGuest = remoteUsersMap.get(guestAgoraUid);
                      return (
                         <ParticipantVideo
@@ -283,11 +323,11 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
                 </div>
                 <div className="flex items-center gap-3">
                     <input type="text" placeholder="Add a comment..." className="flex-grow bg-black/40 border border-slate-600 rounded-full py-2.5 px-4 text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-rose-500 backdrop-blur-sm"/>
-                    <button onClick={toggleMute} className="w-12 h-12 bg-black/40 rounded-full flex items-center justify-center backdrop-blur-sm">
-                        <Icon name={isMuted ? 'microphone-slash' : 'mic'} className={`w-6 h-6 ${isMuted ? 'text-red-500' : 'text-white'}`} />
+                    <button onClick={toggleMute} disabled={!isMicAvailable} className={`w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors ${!isMicAvailable ? 'bg-red-600/50 cursor-not-allowed' : isMuted ? 'bg-rose-600' : 'bg-black/40'}`}>
+                        <Icon name={!isMicAvailable || isMuted ? 'microphone-slash' : 'mic'} className="w-6 h-6" />
                     </button>
-                    <button onClick={toggleCamera} className="w-12 h-12 bg-black/40 rounded-full flex items-center justify-center backdrop-blur-sm">
-                        <Icon name={isCameraOff ? 'video-camera-slash' : 'video-camera'} className={`w-6 h-6 ${isCameraOff ? 'text-red-500' : 'text-white'}`} />
+                    <button onClick={toggleCamera} disabled={!isCamAvailable} className={`w-12 h-12 rounded-full flex items-center justify-center backdrop-blur-sm transition-colors ${!isCamAvailable ? 'bg-red-600/50 cursor-not-allowed' : isCameraOff ? 'bg-rose-600' : 'bg-black/40'}`}>
+                        <Icon name={!isCamAvailable || isCameraOff ? 'video-camera-slash' : 'video-camera'} className="w-6 h-6" />
                     </button>
                     <button onClick={handleHangUp} className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center">
                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" transform="rotate(-135 12 12)"/></svg>
