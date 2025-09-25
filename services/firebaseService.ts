@@ -1695,7 +1695,19 @@ async moveToAudienceInAudioRoom(hostId: string, userId: string, roomId: string):
 
                 if (participantIndex > -1) {
                     const existingParticipant = participants[participantIndex];
-                    const updatedParticipant = removeUndefined({ ...existingParticipant, ...updates });
+                    
+                    // Instead of spreading, create a new clean object to prevent any
+                    // potentially invalid fields from being carried over from old data structures.
+                    const updatedParticipant: VideoParticipantState = {
+                        id: existingParticipant.id,
+                        name: existingParticipant.name,
+                        username: existingParticipant.username,
+                        avatarUrl: existingParticipant.avatarUrl,
+                        isMuted: existingParticipant.isMuted,
+                        isCameraOff: existingParticipant.isCameraOff,
+                        ...updates, // Apply the specific updates from the call
+                    };
+                    
                     participants[participantIndex] = updatedParticipant;
                     transaction.update(roomRef, { participants });
                 }
