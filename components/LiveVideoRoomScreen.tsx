@@ -121,12 +121,13 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
             client.enableAudioVolumeIndicator();
             client.on('volume-indicator', (volumes) => {
                 const mainSpeaker = volumes.reduce((max, current) => current.level > max.level ? current : max, { level: 0 });
-                if (isMounted) setActiveSpeakerId(mainSpeaker.level > 5 ? mainSpeaker.uid.toString() : null);
+                if (isMounted) setActiveSpeakerId(mainSpeaker.level > 5 ? String(mainSpeaker.uid) : null);
             });
 
-            const token = await geminiService.getAgoraToken(roomId, currentUser.id);
+            const uid = parseInt(currentUser.id, 36) % 10000000;
+            const token = await geminiService.getAgoraToken(roomId, uid);
             if (!token) throw new Error("Failed to retrieve Agora token.");
-            await client.join(AGORA_APP_ID, roomId, token, currentUser.id);
+            await client.join(AGORA_APP_ID, roomId, token, uid);
 
             const [audioTrack, videoTrack] = await AgoraRTC.createMicrophoneAndCameraTracks();
             if(!isMounted) return;
@@ -187,6 +188,24 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
         localVideoTrack.current?.setEnabled(!cameraOff);
         setIsCameraOff(cameraOff);
     };
+
+    const participantIdMap = useMemo(() => {
+        if (!room) return new Map<string, string>();
+        const map = new Map<string, string>();
+        room.participants.forEach(p => {
+            const agoraUID = String(parseInt(p.id, 36) % 10000000);
+            map.set(agoraUID, p.id);
+        });
+        return map;
+    }, [room]);
+    
+    const activeFirebaseSpeakerId = activeSpeakerId ? participantIdMap.get(activeSpeakerId) : null;
+    
+    const remoteUsersMap = useMemo(() => {
+        const map = new Map<string, IAgoraRTCRemoteUser>();
+        remoteUsers.forEach(u => map.set(String(u.uid), u));
+        return map;
+    }, [remoteUsers]);
     
     if (isLoading || !room) {
         return <div className="h-full w-full flex items-center justify-center bg-black text-white">Connecting...</div>;
@@ -199,7 +218,8 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
     
     const mainParticipant = selfIsHost ? selfState : host;
     const mainIsLocal = selfIsHost;
-    const mainRemoteUser = selfIsHost ? undefined : remoteUsers.find(u => u.uid.toString() === host.id);
+    const hostAgoraUid = String(parseInt(host.id, 36) % 10000000);
+    const mainRemoteUser = selfIsHost ? undefined : remoteUsersMap.get(hostAgoraUid);
 
     return (
         <div className="relative h-full w-full bg-black text-white overflow-hidden">
@@ -209,7 +229,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
                     layout="main"
                     participant={mainParticipant}
                     isLocal={mainIsLocal}
-                    isSpeaking={activeSpeakerId === mainParticipant.id}
+                    isSpeaking={activeFirebaseSpeakerId === mainParticipant.id}
                     localVideoTrack={localVideoTrackState}
                     remoteUser={mainRemoteUser}
                 />
@@ -234,17 +254,21 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
 
             {/* Guests Video List */}
             <div className="absolute top-20 right-4 w-28 space-y-2 z-10 flex flex-col">
-                {guests.map(guest => (
-                     <ParticipantVideo
-                        key={guest.id}
-                        layout="guest"
-                        participant={guest}
-                        isLocal={guest.id === currentUser.id}
-                        isSpeaking={activeSpeakerId === guest.id}
-                        localVideoTrack={localVideoTrackState}
-                        remoteUser={remoteUsers.find(u => u.uid.toString() === guest.id)}
-                     />
-                ))}
+                {guests.map(guest => {
+                    const guestAgoraUid = String(parseInt(guest.id, 36) % 10000000);
+                    const remoteUserForGuest = remoteUsersMap.get(guestAgoraUid);
+                     return (
+                        <ParticipantVideo
+                            key={guest.id}
+                            layout="guest"
+                            participant={guest}
+                            isLocal={guest.id === currentUser.id}
+                            isSpeaking={activeFirebaseSpeakerId === guest.id}
+                            localVideoTrack={localVideoTrackState}
+                            remoteUser={remoteUserForGuest}
+                        />
+                    );
+                })}
             </div>
 
             {/* Bottom Section */}

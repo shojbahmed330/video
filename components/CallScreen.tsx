@@ -143,12 +143,12 @@ const CallScreen: React.FC<CallScreenProps> = ({ currentUser, peerUser, callId, 
             });
             
             // Join the Agora channel first
-            const uid = parseInt(currentUser.id, 36) % 10000000;
-            const token = await geminiService.getAgoraToken(callId, uid);
+            const uid = parseInt(currentUser.id, 36) % 10000000; // Generate integer UID
+            const token = await geminiService.getAgoraToken(callId, uid); // Use integer UID for token
             if (!token) {
                 throw new Error("Failed to retrieve Agora token. The call cannot proceed.");
             }
-            await client.join(AGORA_APP_ID, callId, token, uid);
+            await client.join(AGORA_APP_ID, callId, token, uid); // Use integer UID to join
 
             // **Graceful Media Initialization**
             // Now, try to get local media, but catch errors if devices are not found.
