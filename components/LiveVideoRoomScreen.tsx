@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { LiveVideoRoom, User, VideoParticipantState } from '../types';
 import { geminiService } from '../services/geminiService';
@@ -58,10 +57,9 @@ const ParticipantVideo: React.FC<{
     }, [view]);
 
     return (
-        <button 
+        <div 
             className={containerClasses} 
             onClick={onClick}
-            disabled={!onClick}
         >
             {showVideo ? (
                 <div ref={videoRef} className={`w-full h-full ${isLocal ? 'transform scale-x-[-1]' : ''}`} />
@@ -75,7 +73,7 @@ const ParticipantVideo: React.FC<{
                  <p className="font-semibold text-white truncate text-shadow-lg text-sm">{participant.name}</p>
                  {participant.isMuted && <Icon name="microphone-slash" className="w-4 h-4 text-white flex-shrink-0" />}
              </div>
-        </button>
+        </div>
     );
 };
 
@@ -160,7 +158,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
             const tracksToPublish = [audioTrack, videoTrack].filter(Boolean) as (IMicrophoneAudioTrack | ICameraVideoTrack)[];
             if (tracksToPublish.length > 0) await client.publish(tracksToPublish);
         };
-// FIX: Corrected the service call from the non-existent 'listenToRoom' to the specific 'listenToVideoRoom' and removed the redundant 'video' parameter.
+
         const roomUnsubscribe = geminiService.listenToVideoRoom(roomId, (liveRoom) => {
             if (isMounted) {
                 if (!liveRoom || liveRoom.status === 'ended') onGoBack();
@@ -230,19 +228,19 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
 
     const allParticipants = room.participants || [];
     const localParticipant = allParticipants.find(p => p.id === currentUser.id);
-    const remoteParticipants = allParticipants.filter(p => p.id !== currentUser.id);
     
     const activeSpeaker = allParticipants.find(p => stringToIntegerHash(p.id) === activeSpeakerUid);
     const pinnedParticipant = allParticipants.find(p => p.id === pinnedUserId);
 
     // Determine the main participant for mobile view
-    const mainMobileParticipant = pinnedParticipant || activeSpeaker || remoteParticipants[0] || localParticipant;
+    const mainMobileParticipant = pinnedParticipant || activeSpeaker || allParticipants.find(p => p.id !== currentUser.id) || localParticipant;
     
     const gridLayoutClasses = useMemo(() => {
         const count = allParticipants.length;
         if (count <= 1) return 'grid-cols-1';
+        if (count === 2) return 'grid-cols-2';
         if (count <= 4) return 'grid-cols-2';
-        if (count <= 9) return 'grid-cols-3';
+        if (count <= 6) return 'grid-cols-3';
         return 'grid-cols-3';
     }, [allParticipants.length]);
 
@@ -278,7 +276,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
                         />
                     )}
                 </div>
-                 {localParticipant && (
+                 {localParticipant && mainMobileParticipant?.id !== localParticipant.id && (
                      <div 
                         className="absolute w-24 h-32 z-20 touch-none" 
                         style={{ top: `${localPipPosition.y}px`, left: `${localPipPosition.x}px` }}
@@ -291,25 +289,27 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
                              isSpeaking={activeSpeaker?.id === localParticipant.id}
                              localVideoTrack={localVideoTrackState}
                              view="pip"
-                             onClick={() => setPinnedUserId(currentUser.id)}
+                             onClick={() => setPinnedUserId(currentUser.id === pinnedUserId ? null : currentUser.id)}
                          />
                      </div>
                  )}
                  <div className="flex-shrink-0 w-full overflow-x-auto no-scrollbar p-2">
                     <div className="flex gap-2 w-max">
-                        {allParticipants.filter(p => p.id !== mainMobileParticipant?.id && p.id !== currentUser.id).map(p => (
+                        {allParticipants.filter(p => p.id !== mainMobileParticipant?.id).map(p => (
                              <div key={p.id} className="w-24 h-24 flex-shrink-0">
                                 <ParticipantVideo
-                                    participant={p}
+                                    participant={p.id === currentUser.id ? { ...p, isMuted, isCameraOff } : p}
+                                    isLocal={p.id === currentUser.id}
                                     isSpeaking={activeSpeaker?.id === p.id}
                                     remoteUser={remoteUsersMap.get(stringToIntegerHash(p.id))}
+                                    localVideoTrack={localVideoTrackState}
                                     view="filmstrip"
-                                    onClick={() => setPinnedUserId(p.id)}
+                                    onClick={() => setPinnedUserId(p.id === pinnedUserId ? null : p.id)}
                                 />
                             </div>
                         ))}
                     </div>
-                </footer>
+                </div>
             </main>
             
             <div className="float-emoji-container">
