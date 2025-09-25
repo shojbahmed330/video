@@ -78,25 +78,16 @@ export const PostCard: React.FC<PostCardProps> = ({ post, currentUser, isActive,
   const isAuthor = currentUser?.id === post?.author?.id;
   const canShowMenu = isAuthor || isGroupAdmin;
 
-  if (!post || !post.author) {
-    return null;
-  }
-    
-  const timeAgo = new Date(post.createdAt).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric'
-  });
-
   useEffect(() => {
     const videoElement = videoRef.current;
     if (videoElement) {
-      if (isActive && post.isSponsored) { // Only autoplay sponsored content
+      if (isActive && post?.isSponsored) { // Only autoplay sponsored content
         videoElement.play().catch(error => console.log("Autoplay prevented:", error));
       } else {
         videoElement.pause();
       }
     }
-  }, [isActive, post.isSponsored]);
+  }, [isActive, post?.isSponsored]);
 
   useEffect(() => {
     const audioElement = audioRef.current;
@@ -107,7 +98,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, currentUser, isActive,
             audioElement.pause();
         }
     }
-  }, [isPlaying, isActive, post.audioUrl]);
+  }, [isPlaying, isActive, post?.audioUrl]);
   
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -119,6 +110,15 @@ export const PostCard: React.FC<PostCardProps> = ({ post, currentUser, isActive,
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
   
+  if (!post || !post.author) {
+    return null;
+  }
+    
+  const timeAgo = new Date(post.createdAt).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric'
+  });
+
   const handleReaction = (e: React.MouseEvent, emoji: string) => {
       e.stopPropagation();
       onReact(post.id, emoji);

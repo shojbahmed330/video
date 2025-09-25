@@ -77,6 +77,29 @@ const ImageModal: React.FC<ImageModalProps> = ({ post, currentUser, isLoading, o
     return topLevelComments;
   }, [post?.comments]);
 
+  const myReaction = useMemo(() => {
+    if (!currentUser || !post?.reactions) return null;
+    return post.reactions[currentUser.id] || null;
+  }, [currentUser, post?.reactions]);
+
+  const reactionCount = useMemo(() => {
+    if (!post?.reactions) return 0;
+    return Object.keys(post.reactions).length;
+  }, [post?.reactions]);
+
+  const topReactions = useMemo(() => {
+    if (!post?.reactions) return [];
+    const counts: { [key: string]: number } = {};
+    Object.values(post.reactions).forEach(emoji => {
+        counts[emoji as string] = (counts[emoji as string] || 0) + 1;
+    });
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0]);
+  }, [post?.reactions]);
+
+  if (!post || !post.author) {
+    return null;
+  }
+
   const handlePlayComment = (comment: Comment) => {
     if (comment.type !== 'audio') return;
     setPlayingCommentId(prev => prev === comment.id ? null : comment.id);
@@ -113,29 +136,6 @@ const ImageModal: React.FC<ImageModalProps> = ({ post, currentUser, isLoading, o
       if (post) onReactToPost(post.id, emoji);
       setPickerOpen(false);
   };
-
-  const myReaction = useMemo(() => {
-    if (!currentUser || !post?.reactions) return null;
-    return post.reactions[currentUser.id] || null;
-  }, [currentUser, post?.reactions]);
-
-  const reactionCount = useMemo(() => {
-    if (!post?.reactions) return 0;
-    return Object.keys(post.reactions).length;
-  }, [post?.reactions]);
-
-  const topReactions = useMemo(() => {
-    if (!post?.reactions) return [];
-    const counts: { [key: string]: number } = {};
-    Object.values(post.reactions).forEach(emoji => {
-        counts[emoji as string] = (counts[emoji as string] || 0) + 1;
-    });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(e => e[0]);
-  }, [post?.reactions]);
-
-  if (!post || !post.author) {
-    return null;
-  }
 
   if (isLoading) {
     return (
