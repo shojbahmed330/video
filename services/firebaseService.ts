@@ -1691,21 +1691,22 @@ async moveToAudienceInAudioRoom(hostId: string, userId: string, roomId: string):
 
                 const roomData = roomDoc.data() as LiveVideoRoom;
                 const participants = roomData.participants || [];
-                const participantIndex = participants.findIndex(p => p.id === userId);
+                const participantIndex = participants.findIndex(p => p && p.id === userId);
 
                 if (participantIndex > -1) {
                     const existingParticipant = participants[participantIndex];
                     
-                    // Instead of spreading, create a new clean object to prevent any
-                    // potentially invalid fields from being carried over from old data structures.
+                    // This is the crucial fix. We ensure that boolean fields have a default
+                    // value before spreading the updates. This prevents 'undefined' from being
+                    // written to the Firestore array if an old participant object is missing these fields.
                     const updatedParticipant: VideoParticipantState = {
                         id: existingParticipant.id,
                         name: existingParticipant.name,
                         username: existingParticipant.username,
                         avatarUrl: existingParticipant.avatarUrl,
-                        isMuted: existingParticipant.isMuted,
-                        isCameraOff: existingParticipant.isCameraOff,
-                        ...updates, // Apply the specific updates from the call
+                        isMuted: existingParticipant.isMuted ?? false,
+                        isCameraOff: existingParticipant.isCameraOff ?? false,
+                        ...updates,
                     };
                     
                     participants[participantIndex] = updatedParticipant;
@@ -1714,6 +1715,7 @@ async moveToAudienceInAudioRoom(hostId: string, userId: string, roomId: string):
             });
         } catch (error) {
             console.error("Failed to update participant state:", error);
+            throw error; // Re-throwing to make it clear the operation failed.
         }
     },
 
