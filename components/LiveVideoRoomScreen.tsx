@@ -32,11 +32,14 @@ const ParticipantVideo: React.FC<{
     const videoRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        if (videoRef.current && videoTrack) {
+        if (videoRef.current && videoTrack && videoTrack.enabled) {
             videoTrack.play(videoRef.current);
         }
         return () => {
-            videoTrack?.stop();
+            // Only stop tracks if they are still playing to avoid errors
+            if (videoTrack?.isPlaying) {
+                 videoTrack?.stop();
+            }
         };
     }, [videoTrack]);
 
@@ -77,6 +80,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
     useEffect(() => {
         const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
         agoraClient.current = client;
+        let tracksPublished = false;
 
         const setupAgora = async () => {
             client.on('user-published', async (user, mediaType) => {
@@ -103,9 +107,20 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
                 localAudioTrack.current = audioTrack;
                 localVideoTrack.current = videoTrack;
                 await client.publish([audioTrack, videoTrack]);
-            } catch (error) {
+                tracksPublished = true;
+            } catch (error: any) {
                 console.error("Failed to get media devices:", error);
-                onSetTtsMessage("Could not access camera/microphone.");
+                 if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+                    onSetTtsMessage("No camera/microphone found.");
+                    // Still join, but with camera/mic off state
+                    setIsCameraOff(true);
+                    setIsMuted(true);
+                    await geminiService.updateParticipantStateInVideoRoom(roomId, currentUser.id, { isCameraOff: true, isMuted: true });
+                } else {
+                    onSetTtsMessage("Could not access camera/microphone.");
+                    onGoBackRef.current();
+                    return;
+                }
             }
         };
 
@@ -132,18 +147,20 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
             }
         });
         return unsubscribe;
-    }, [roomId]);
+    }, [roomId, onSetTtsMessage]);
 
     const toggleMute = async () => {
+        if (!localAudioTrack.current) return;
         const muted = !isMuted;
-        await localAudioTrack.current?.setMuted(muted);
+        await localAudioTrack.current.setMuted(muted);
         setIsMuted(muted);
         await geminiService.updateParticipantStateInVideoRoom(roomId, currentUser.id, { isMuted: muted });
     };
 
     const toggleCamera = async () => {
+        if (!localVideoTrack.current) return;
         const cameraOff = !isCameraOff;
-        await localVideoTrack.current?.setEnabled(!cameraOff);
+        await localVideoTrack.current.setEnabled(!cameraOff);
         setIsCameraOff(cameraOff);
         await geminiService.updateParticipantStateInVideoRoom(roomId, currentUser.id, { isCameraOff: cameraOff });
     };
@@ -151,18 +168,17 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
     const handleEndCall = () => {
         const isHost = room?.host.id === currentUser.id;
         if (isHost) {
-            geminiService.endLiveVideoRoom(currentUser.id, roomId);
-        } else {
-            onGoBack();
+            // In a real app, you might want to end the room for everyone
         }
+        onGoBack();
     };
 
     const localParticipantState = participants.find(p => p.id === currentUser.id);
 
     return (
         <div className="h-full w-full flex flex-col bg-slate-900 text-white">
-            <header className="p-4 flex justify-between items-center">
-                <h1 className="text-xl font-bold">{room?.topic || 'Video Room'}</h1>
+            <header className="p-4 flex justify-between items-center flex-shrink-0">
+                <h1 className="text-xl font-bold truncate">{room?.topic || 'Video Room'}</h1>
             </header>
 
             <main className="flex-grow grid grid-cols-2 grid-rows-2 gap-2 p-2">
@@ -185,7 +201,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
                 })}
             </main>
 
-            <footer className="p-4 flex justify-center items-center gap-6 bg-black/30">
+            <footer className="p-4 flex justify-center items-center gap-6 bg-black/30 flex-shrink-0">
                 <button onClick={toggleMute} className={`p-4 rounded-full ${isMuted ? 'bg-rose-600' : 'bg-slate-700'}`}>
                     <Icon name={isMuted ? 'microphone-slash' : 'mic'} className="w-6 h-6"/>
                 </button>
