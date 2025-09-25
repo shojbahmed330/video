@@ -129,7 +129,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
             return;
         }
 
-        const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+        const client = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' });
         agoraClient.current = client;
 
         const setupAgora = async () => {
