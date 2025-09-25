@@ -1680,9 +1680,9 @@ async moveToAudienceInAudioRoom(hostId: string, userId: string, roomId: string):
                 const participantIndex = participants.findIndex(p => p.id === userId);
 
                 if (participantIndex > -1) {
-                    // Ensure we don't accidentally remove fields
                     const existingParticipant = participants[participantIndex];
-                    participants[participantIndex] = { ...existingParticipant, ...updates };
+                    const updatedParticipant = removeUndefined({ ...existingParticipant, ...updates });
+                    participants[participantIndex] = updatedParticipant;
                     transaction.update(roomRef, { participants });
                 }
             });
