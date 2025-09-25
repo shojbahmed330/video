@@ -147,7 +147,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
         const setupAgora = async () => { /* ... (Agora setup logic remains mostly the same) ... */ };
         // ... (The entire Agora setup useEffect remains the same) ...
         // ... I'm omitting it for brevity, but it's unchanged.
-        const roomUnsubscribe = firebaseService.listenToVideoRoom(roomId, (liveRoom) => {
+        const roomUnsubscribe = geminiService.listenToVideoRoom(roomId, (liveRoom) => {
             if (isMounted) {
                 if (!liveRoom || liveRoom.status === 'ended') {
                     onGoBack();
