@@ -151,7 +151,7 @@ const LiveVideoRoomScreen: React.FC<LiveVideoRoomScreenProps> = ({ currentUser, 
 
             await client.setClientRole(isHost ? 'host' : 'audience');
 
-            const uid = stringToIntegerHash(currentUser.id);
+            const uid = stringToIntegerHash(`${currentUser.id}-${Date.now()}`);
             const token = await geminiService.getAgoraToken(roomId, uid);
             if (!token) throw new Error("Failed to retrieve Agora token.");
             await client.join(AGORA_APP_ID, roomId, token, uid);

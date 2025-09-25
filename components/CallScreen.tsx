@@ -150,7 +150,7 @@ const CallScreen: React.FC<CallScreenProps> = ({ currentUser, peerUser, callId, 
                 firebaseService.updateCallStatus(callId, 'ended');
             });
             
-            const uid = stringToIntegerHash(currentUser.id);
+            const uid = stringToIntegerHash(`${currentUser.id}-${Date.now()}`);
             const token = await geminiService.getAgoraToken(callId, uid);
             if (!token) {
                 throw new Error("Failed to retrieve Agora token. The call cannot proceed.");
