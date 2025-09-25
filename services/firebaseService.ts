@@ -6,7 +6,7 @@ import 'firebase/compat/storage';
 import { User as FirebaseUser } from 'firebase/auth';
 
 import { db, auth, storage } from './firebaseConfig';
-import { User, Post, Comment, Message, ReplyInfo, Story, Group, Campaign, LiveAudioRoom, LiveVideoRoom, Report, Notification, Lead, Author, AdminUser, FriendshipStatus, ChatSettings, Conversation, Call, LiveAudioRoomMessage, LiveVideoRoomMessage } from '../types';
+import { User, Post, Comment, Message, ReplyInfo, Story, Group, Campaign, LiveAudioRoom, LiveVideoRoom, Report, Notification, Lead, Author, AdminUser, FriendshipStatus, ChatSettings, Conversation, Call, LiveAudioRoomMessage, LiveVideoRoomMessage, VideoParticipantState } from '../types';
 import { DEFAULT_AVATARS, DEFAULT_COVER_PHOTOS, CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET, SPONSOR_CPM_BDT } from '../constants';
 
 const { serverTimestamp, increment, arrayUnion, arrayRemove, delete: deleteField } = firebase.firestore.FieldValue;
@@ -1665,6 +1665,29 @@ async moveToAudienceInAudioRoom(hostId: string, userId: string, roomId: string):
         }
     }
 },
+
+    async updateParticipantStateInVideoRoom(roomId: string, userId: string, updates: Partial<VideoParticipantState>): Promise<void> {
+        const roomRef = db.collection('liveVideoRooms').doc(roomId);
+        try {
+            await db.runTransaction(async (transaction) => {
+                const roomDoc = await transaction.get(roomRef);
+                if (!roomDoc.exists) throw "Room not found";
+
+                const roomData = roomDoc.data() as LiveVideoRoom;
+                const participants = roomData.participants || [];
+                const participantIndex = participants.findIndex(p => p.id === userId);
+
+                if (participantIndex > -1) {
+                    // Ensure we don't accidentally remove fields
+                    const existingParticipant = participants[participantIndex];
+                    participants[participantIndex] = { ...existingParticipant, ...updates };
+                    transaction.update(roomRef, { participants });
+                }
+            });
+        } catch (error) {
+            console.error("Failed to update participant state:", error);
+        }
+    },
 
     // --- Campaigns, Stories, Groups, Admin, etc. ---
     async getCampaignsForSponsor(sponsorId: string): Promise<Campaign[]> {
