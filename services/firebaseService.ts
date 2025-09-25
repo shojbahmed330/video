@@ -1542,7 +1542,14 @@ async createLiveAudioRoom(host: User, topic: string): Promise<LiveAudioRoom> {
     } as LiveAudioRoom;
 },
 async createLiveVideoRoom(host: User, topic: string): Promise<LiveVideoRoom> {
-    const hostAsParticipant = removeUndefined({ ...host, isMuted: false, isCameraOff: false });
+    const hostAsParticipant: VideoParticipantState = {
+        id: host.id,
+        name: host.name,
+        username: host.username,
+        avatarUrl: host.avatarUrl,
+        isMuted: false,
+        isCameraOff: false,
+    };
     const newRoomData = {
         host: { id: host.id, name: host.name, username: host.username, avatarUrl: host.avatarUrl },
         topic,
@@ -1571,7 +1578,14 @@ async joinLiveVideoRoom(userId: string, roomId: string): Promise<void> {
     const user = await this.getUserProfileById(userId);
     if (!user) return;
     const roomRef = db.collection('liveVideoRooms').doc(roomId);
-    const participantData = removeUndefined({ ...user, isMuted: false, isCameraOff: false });
+    const participantData: VideoParticipantState = {
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+        isMuted: false,
+        isCameraOff: false,
+    };
     await roomRef.update({
         participants: arrayUnion(participantData),
     });
