@@ -6,7 +6,7 @@ import 'firebase/compat/storage';
 import { User as FirebaseUser } from 'firebase/auth';
 
 import { db, auth, storage } from './firebaseConfig';
-import { User, Post, Comment, Message, ReplyInfo, Story, Group, Campaign, LiveAudioRoom, LiveVideoRoom, Report, Notification, Lead, Author, AdminUser, FriendshipStatus, ChatSettings, Conversation, Call, LiveAudioRoomMessage } from '../types';
+import { User, Post, Comment, Message, ReplyInfo, Story, Group, Campaign, LiveAudioRoom, LiveVideoRoom, Report, Notification, Lead, Author, AdminUser, FriendshipStatus, ChatSettings, Conversation, Call, LiveAudioRoomMessage, LiveVideoRoomMessage } from '../types';
 import { DEFAULT_AVATARS, DEFAULT_COVER_PHOTOS, CLOUDINARY_CLOUD_NAME, CLOUDINARY_UPLOAD_PRESET, SPONSOR_CPM_BDT } from '../constants';
 
 const { serverTimestamp, increment, arrayUnion, arrayRemove, delete: deleteField } = firebase.firestore.FieldValue;
@@ -1479,6 +1479,32 @@ listenToLiveVideoRooms(callback: (rooms: LiveVideoRoom[]) => void) {
         });
         callback(rooms);
     });
+},
+listenToLiveVideoRoomMessages(roomId: string, callback: (messages: LiveVideoRoomMessage[]) => void) {
+    const q = db.collection('liveVideoRooms').doc(roomId).collection('messages').orderBy('createdAt', 'asc').limitToLast(50);
+    return q.onSnapshot(snapshot => {
+        const messages = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                ...data,
+                createdAt: data.createdAt instanceof firebase.firestore.Timestamp ? data.createdAt.toDate().toISOString() : new Date().toISOString(),
+            } as LiveVideoRoomMessage;
+        });
+        callback(messages);
+    });
+},
+async sendLiveVideoRoomMessage(roomId: string, sender: User, text: string): Promise<void> {
+    const messageData = {
+        sender: {
+            id: sender.id,
+            name: sender.name,
+            avatarUrl: sender.avatarUrl,
+        },
+        text,
+        createdAt: serverTimestamp(),
+    };
+    await db.collection('liveVideoRooms').doc(roomId).collection('messages').add(messageData);
 },
 listenToRoom(roomId: string, type: 'audio' | 'video', callback: (room: LiveAudioRoom | LiveVideoRoom | null) => void) {
     const collectionName = type === 'audio' ? 'liveAudioRooms' : 'liveVideoRooms';
