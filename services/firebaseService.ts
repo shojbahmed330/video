@@ -1800,15 +1800,33 @@ async moveToAudienceInAudioRoom(hostId: string, userId: string, roomId: string):
         const groupRef = db.collection('groups').doc(groupId);
         const user = await this.getUserProfileById(userId);
         if (!user) return false;
-        await groupRef.update({ members: arrayUnion(user), memberCount: increment(1) });
+        const memberObject = { id: user.id, name: user.name, username: user.username, avatarUrl: user.avatarUrl };
+        await groupRef.update({ members: arrayUnion(memberObject), memberCount: increment(1) });
         return true;
     },
     async leaveGroup(userId, groupId): Promise<boolean> {
         const groupRef = db.collection('groups').doc(groupId);
-        const user = await this.getUserProfileById(userId);
-        if (!user) return false;
-        await groupRef.update({ members: arrayRemove(user), memberCount: increment(-1) });
-        return true;
+        try {
+            await db.runTransaction(async (transaction) => {
+                const groupDoc = await transaction.get(groupRef);
+                if (!groupDoc.exists) throw "Group not found";
+                const groupData = groupDoc.data() as Group;
+                const updatedMembers = groupData.members.filter(m => m.id !== userId);
+                const updatedAdmins = groupData.admins.filter(a => a.id !== userId);
+                const updatedModerators = groupData.moderators.filter(m => m.id !== userId);
+
+                transaction.update(groupRef, {
+                    members: updatedMembers,
+                    admins: updatedAdmins,
+                    moderators: updatedModerators,
+                    memberCount: increment(-1)
+                });
+            });
+            return true;
+        } catch (error) {
+            console.error("Failed to leave group:", error);
+            return false;
+        }
     },
     async getPostsForGroup(groupId): Promise<Post[]> {
         const q = db.collection('posts').where('groupId', '==', groupId).where('status', '==', 'approved').orderBy('createdAt', 'desc');
@@ -1927,17 +1945,31 @@ async moveToAudienceInAudioRoom(hostId: string, userId: string, roomId: string):
     async promoteGroupMember(groupId: string, userToPromote: User, newRole: 'Admin' | 'Moderator'): Promise<boolean> {
         const groupRef = db.collection('groups').doc(groupId);
         try {
-            const fieldToUpdate = newRole === 'Admin' ? 'admins' : 'moderators';
-            const userObject = {
-                id: userToPromote.id,
-                name: userToPromote.name,
-                username: userToPromote.username,
-                avatarUrl: userToPromote.avatarUrl,
-            };
-            const otherField = newRole === 'Admin' ? 'moderators' : 'admins';
-            await groupRef.update({
-                [fieldToUpdate]: arrayUnion(userObject),
-                [otherField]: arrayRemove(userObject),
+            await db.runTransaction(async (transaction) => {
+                const groupDoc = await transaction.get(groupRef);
+                if (!groupDoc.exists) throw "Group not found";
+                const groupData = groupDoc.data() as Group;
+
+                const userObject = {
+                    id: userToPromote.id,
+                    name: userToPromote.name,
+                    username: userToPromote.username,
+                    avatarUrl: userToPromote.avatarUrl,
+                };
+                
+                const updatedAdmins = groupData.admins.filter(a => a.id !== userToPromote.id);
+                const updatedModerators = groupData.moderators.filter(m => m.id !== userToPromote.id);
+
+                if (newRole === 'Admin') {
+                    updatedAdmins.push(userObject);
+                } else { // Moderator
+                    updatedModerators.push(userObject);
+                }
+
+                transaction.update(groupRef, {
+                    admins: updatedAdmins,
+                    moderators: updatedModerators,
+                });
             });
             return true;
         } catch (error) {
@@ -1948,14 +1980,18 @@ async moveToAudienceInAudioRoom(hostId: string, userId: string, roomId: string):
     async demoteGroupMember(groupId: string, userToDemote: User, oldRole: 'Admin' | 'Moderator'): Promise<boolean> {
         const groupRef = db.collection('groups').doc(groupId);
         try {
-            const fieldToUpdate = oldRole === 'Admin' ? 'admins' : 'moderators';
-            await groupRef.update({
-                [fieldToUpdate]: arrayRemove({
-                    id: userToDemote.id,
-                    name: userToDemote.name,
-                    username: userToDemote.username,
-                    avatarUrl: userToDemote.avatarUrl,
-                })
+            await db.runTransaction(async (transaction) => {
+                const groupDoc = await transaction.get(groupRef);
+                if (!groupDoc.exists) throw "Group not found";
+                const groupData = groupDoc.data() as Group;
+
+                if (oldRole === 'Admin') {
+                    const updatedAdmins = groupData.admins.filter(a => a.id !== userToDemote.id);
+                    transaction.update(groupRef, { admins: updatedAdmins });
+                } else { // Moderator
+                    const updatedModerators = groupData.moderators.filter(m => m.id !== userToDemote.id);
+                    transaction.update(groupRef, { moderators: updatedModerators });
+                }
             });
             return true;
         } catch (error) {
@@ -1966,17 +2002,24 @@ async moveToAudienceInAudioRoom(hostId: string, userId: string, roomId: string):
     async removeGroupMember(groupId: string, userToRemove: User): Promise<boolean> {
         const groupRef = db.collection('groups').doc(groupId);
         try {
-            const userObject = {
-                id: userToRemove.id,
-                name: userToRemove.name,
-                username: userToRemove.username,
-                avatarUrl: userToRemove.avatarUrl,
-            };
-            await groupRef.update({
-                members: arrayRemove(userObject),
-                admins: arrayRemove(userObject),
-                moderators: arrayRemove(userObject),
-                memberCount: increment(-1),
+            await db.runTransaction(async (transaction) => {
+                const groupDoc = await transaction.get(groupRef);
+                if (!groupDoc.exists) throw "Group not found";
+                const groupData = groupDoc.data() as Group;
+                
+                const isAlreadyMember = groupData.members.some(m => m.id === userToRemove.id);
+                const memberCountChange = isAlreadyMember ? increment(-1) : increment(0);
+
+                const updatedMembers = groupData.members.filter(m => m.id !== userToRemove.id);
+                const updatedAdmins = groupData.admins.filter(a => a.id !== userToRemove.id);
+                const updatedModerators = groupData.moderators.filter(m => m.id !== userToRemove.id);
+
+                transaction.update(groupRef, {
+                    members: updatedMembers,
+                    admins: updatedAdmins,
+                    moderators: updatedModerators,
+                    memberCount: memberCountChange
+                });
             });
             return true;
         } catch (error) {

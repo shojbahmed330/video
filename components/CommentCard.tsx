@@ -1,5 +1,3 @@
-
-
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import type { Comment, User } from '../types';
 import Icon from './Icon';
@@ -14,18 +12,14 @@ interface CommentCardProps {
   onAuthorClick: (username: string) => void;
   onReply: (comment: Comment) => void;
   onReact: (commentId: string, emoji: string) => void;
-  // @FIXML-FIX-212: Add optional onEdit and onDelete props
   onEdit?: (commentId: string, newText: string) => void;
   onDelete?: (commentId: string) => void;
-  // @FIXML-FIX-224: Add optional isReply prop
   isReply?: boolean;
 }
 
 const AVAILABLE_REACTIONS = ['❤️', '😂', '👍', '😢', '😡', '🔥', '😮'];
 
 const CommentCard: React.FC<CommentCardProps> = ({ comment, currentUser, isPlaying, onPlayPause, onAuthorClick, onReply, onReact, onEdit, onDelete }) => {
-  // Final Fix: If the comment object or its author is null, return nothing.
-  // This prevents any attempt to access properties of a null object, stopping the crash.
   if (!comment || !comment.author) {
     return null;
   }
